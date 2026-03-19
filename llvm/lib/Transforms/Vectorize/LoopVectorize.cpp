@@ -7171,6 +7171,25 @@ static bool planContainsAdditionalSimplifications(VPlan &Plan,
             !CostCtx.isLegacyUniformAfterVectorization(
                 RepR->getUnderlyingInstr(), VF))
           return true;
+        // The VPlan cost model recognizes predicated loads/stores with
+        // loop-invariant addresses under tail folding as uniform mem ops
+        // (isPredicatedUniformMemOpAfterTailFolding), but the legacy
+        // model's isUniformMemOp excludes predicated blocks.
+        if (auto *Region = RepR->getRegion()) {
+          if (Region->isReplicator()) {
+            if (Value *Ptr =
+                    getLoadStorePointerOperand(RepR->getUnderlyingInstr())) {
+              if (CostCtx.PSE.getSE()->isLoopInvariant(CostCtx.PSE.getSCEV(Ptr),
+                                                       TheLoop)) {
+                auto *BOM = cast<VPBranchOnMaskRecipe>(
+                    &Region->getEntryBasicBlock()->front());
+                if (vputils::isHeaderMask(BOM->getOperand(0),
+                                          *Region->getPlan()))
+                  return true;
+              }
+            }
+          }
+        }
       }
       if (Instruction *UI = GetInstructionForCost(&R)) {
         // If we adjusted the predicate of the recipe, the cost in the legacy
